@@ -1,73 +1,104 @@
-AI-Based Interview Preparation App
+import tensorflow as tf
+from tensorflow.keras.models import load_model
+from tensorflow.keras.layers import SeparableConv2D, BatchNormalization
+from tensorflow.keras.initializers import Zeros, Ones
+from tensorflow.keras.utils import custom_object_scope
+import cv2
+import numpy as np
 
-Overview
+# ✅ Return dictionary format for compatibility
+def fixed_variance_scaling(*args, **kwargs):
+    return {"class_name": "GlorotUniform", "config": {}}
 
-The AI-Based Interview Preparation App is an intelligent mobile application designed to help job seekers enhance their interview skills through AI-driven features. The app provides a seamless experience with real-time feedback, personalized question sets, and interactive mock interviews.
+def fixed_zeros(*args, **kwargs):
+    return Zeros()
 
-Features
+def fixed_ones(*args, **kwargs):
+    return Ones()
 
-AI-Powered Question Generation: Dynamic questions based on user-selected job roles and industries.
+# ✅ Fix SeparableConv2D
+def fixed_separable_conv2d(**kwargs):
+    allowed_keys = [
+        "filters", "kernel_size", "strides", "padding", "data_format", "dilation_rate",
+        "activation", "use_bias", "depthwise_initializer", "pointwise_initializer",
+        "bias_initializer", "depthwise_regularizer", "pointwise_regularizer",
+        "bias_regularizer", "activity_regularizer", "depthwise_constraint", "pointwise_constraint",
+        "bias_constraint", "trainable", "name"
+    ]
+    sanitized_kwargs = {k: v for k, v in kwargs.items() if k in allowed_keys}
+    
+    if "kernel_size" in sanitized_kwargs and isinstance(sanitized_kwargs["kernel_size"], list):
+        sanitized_kwargs["kernel_size"] = tuple(sanitized_kwargs["kernel_size"])
+    
+    if "strides" in sanitized_kwargs and isinstance(sanitized_kwargs["strides"], list):
+        sanitized_kwargs["strides"] = tuple(sanitized_kwargs["strides"])
+    
+    return SeparableConv2D(**sanitized_kwargs)
 
-Real-Time Feedback: AI-driven evaluation on responses, providing insights into communication, confidence, and correctness.
+# ✅ Fix BatchNormalization
+class FixedBatchNormalization(BatchNormalization):
+    def __init__(self, *args, **kwargs):
+        for init_key in ["beta_initializer", "gamma_initializer", "moving_mean_initializer", "moving_variance_initializer"]:
+            if init_key in kwargs and isinstance(kwargs[init_key], dict):
+                kwargs[init_key].pop("dtype", None)
+        super().__init__(*args, **kwargs)
 
-Mock Interviews: Simulated interview sessions with a virtual interviewer.
+# ✅ Function to Load Model
+def load_fixed_model():
+    try:
+        with custom_object_scope({
+            'VarianceScaling': fixed_variance_scaling,  # ✅ Now returns dict format
+            'Zeros': fixed_zeros,
+            'Ones': fixed_ones,
+            'SeparableConv2D': fixed_separable_conv2d,
+            'BatchNormalization': FixedBatchNormalization
+        }):
+            model = load_model("Models/video.h5", compile=False)
+        print("✅ Model loaded successfully!")
+        return model
+    except Exception as e:
+        print(f"❌ Error loading model: {e}")
+        return None
 
-Performance Analysis: Detailed analytics on strengths, weaknesses, and improvement areas.
+# ✅ Function to Process Frame
+def process_frame(frame, model):
+    try:
+        resized_frame = cv2.resize(frame, (224, 224))
+        resized_frame = np.expand_dims(resized_frame, axis=0)  # Add batch dimension
+        resized_frame = resized_frame / 255.0  # Normalize
 
-Multi-Language Support: Enables users to practice in different languages.
+        prediction = model.predict(resized_frame)
+        print(f"Prediction: {prediction}")
 
-User-Friendly UI/UX: Smooth navigation with an intuitive design.
+    except Exception as e:
+        print(f"❌ Error processing frame: {e}")
 
-Technologies Used
+# ✅ Main Webcam Function
+def show_webcam():
+    model = load_fixed_model()
+    if model is None:
+        return  
 
-Frontend: Flutter (Dart) for cross-platform mobile development.
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        print("❌ Error: Could not open webcam")
+        return
 
-Backend: Firebase for authentication, real-time database, and cloud storage.
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("❌ Error: Could not read frame")
+            break
 
-AI & NLP: Python-based AI models for analyzing responses.
+        process_frame(frame, model)
+        cv2.imshow("Webcam", frame)
 
-APIs: OpenAI or custom-built NLP APIs for intelligent question generation and analysis.
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
 
-Installation
+    cap.release()
+    cv2.destroyAllWindows()
 
-Clone the repository:
-
-git clone https://github.com/your-username/ai-interview-app.git
-
-Navigate to the project directory:
-
-cd ai-interview-app
-
-Install dependencies:
-
-flutter pub get
-
-Run the app:
-
-flutter run
-
-How to Use
-
-Sign up/Login using Firebase authentication.
-
-Select Job Role & Industry to get relevant questions.
-
-Start Mock Interview and answer AI-generated questions.
-
-Receive AI Feedback on communication skills and content quality.
-
-Track Progress through performance analysis.
-
-Future Enhancements
-
-Voice-Based Interviews with speech recognition.
-
-Resume & Cover Letter Analysis for job applications.
-
-Interview Coaching Modules with AI-generated tips.
-
-Integration with Job Portals for real-world practice.
-
-
-
-
+# ✅ Run the webcam function
+if __name__ == "__main__":
+    show_webcam()
